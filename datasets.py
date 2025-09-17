@@ -179,7 +179,7 @@ def load_dataset(name: str):
 
         if os.path.exists(
                 f"./progetto/dataset/{name}/train_sub_G.pt") and name != "hpo_neuro":
-            train_sub_G = torch.load(f"../progetto/dataset/{name}/train_sub_G.pt")
+            train_sub_G = torch.load(f"./progetto/dataset/{name}/train_sub_G.pt")
             train_sub_G_label = torch.load(
                 f"./progetto/dataset/{name}/train_sub_G_label.pt")
             val_sub_G = torch.load(f"./progetto/dataset/{name}/val_sub_G.pt")
