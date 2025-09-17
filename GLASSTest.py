@@ -151,8 +151,8 @@ def buildModel(hidden_dim, conv_layer, dropout, jk, pool, z_ratio, aggr):
 
     # use pretrained node embeddings.
     if args.use_nodeid:
-        print("load ", f"./Emb/{args.dataset}_{hidden_dim}.pt")
-        emb = torch.load(f"./Emb/{args.dataset}_{hidden_dim}.pt",
+        print("load ", f".progetto//Emb/{args.dataset}_{hidden_dim}.pt")
+        emb = torch.load(f"./progetto/Emb/{args.dataset}_{hidden_dim}.pt",
                          map_location=torch.device('cpu')).detach()
         conv.input_emb = nn.Embedding.from_pretrained(emb, freeze=False)
 
@@ -271,7 +271,7 @@ def test(pool="size",
 
 print(args)
 # read configuration
-with open(f"config/{args.dataset}.yml") as f:
+with open(f"./progetto/config/{args.dataset}.yml") as f:
     params = yaml.safe_load(f)
 
 print("params", params, flush=True)

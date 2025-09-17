@@ -103,7 +103,7 @@ class BaseGraph(Data):
 def load_dataset(name: str):
     # To use your own dataset, add a branch returning a BaseGraph Object here.
     if name in ["coreness", "cut_ratio", "density", "component"]:
-        obj = np.load(f"./dataset_/{name}/tmp.npy", allow_pickle=True).item()
+        obj = np.load(f"./progetto/dataset_/{name}/tmp.npy", allow_pickle=True).item()
         # copied from https://github.com/mims-harvard/SubGNN/blob/main/SubGNN/subgraph_utils.py
         edge = np.array([[i[0] for i in obj['G'].edges],
                          [i[1] for i in obj['G'].edges]])
@@ -178,27 +178,27 @@ def load_dataset(name: str):
             return train_sub_G, train_sub_G_label, val_sub_G, val_sub_G_label, test_sub_G, test_sub_G_label
 
         if os.path.exists(
-                f"./dataset/{name}/train_sub_G.pt") and name != "hpo_neuro":
-            train_sub_G = torch.load(f"./dataset/{name}/train_sub_G.pt")
+                f"./progetto/dataset/{name}/train_sub_G.pt") and name != "hpo_neuro":
+            train_sub_G = torch.load(f"../progetto/dataset/{name}/train_sub_G.pt")
             train_sub_G_label = torch.load(
-                f"./dataset/{name}/train_sub_G_label.pt")
-            val_sub_G = torch.load(f"./dataset/{name}/val_sub_G.pt")
+                f"./progetto/dataset/{name}/train_sub_G_label.pt")
+            val_sub_G = torch.load(f"./progetto/dataset/{name}/val_sub_G.pt")
             val_sub_G_label = torch.load(
-                f"./dataset/{name}/val_sub_G_label.pt")
-            test_sub_G = torch.load(f"./dataset/{name}/test_sub_G.pt")
+                f"./progetto/dataset/{name}/val_sub_G_label.pt")
+            test_sub_G = torch.load(f"./progetto/dataset/{name}/test_sub_G.pt")
             test_sub_G_label = torch.load(
-                f"./dataset/{name}/test_sub_G_label.pt")
+                f"./progetto/dataset/{name}/test_sub_G_label.pt")
         else:
             train_sub_G, train_sub_G_label, val_sub_G, val_sub_G_label, test_sub_G, test_sub_G_label = read_subgraphs(
-                f"./dataset/{name}/subgraphs.pth")
-            torch.save(train_sub_G, f"./dataset/{name}/train_sub_G.pt")
+                f"./progetto/dataset/{name}/subgraphs.pth")
+            torch.save(train_sub_G, f"./progetto/dataset/{name}/train_sub_G.pt")
             torch.save(train_sub_G_label,
-                       f"./dataset/{name}/train_sub_G_label.pt")
-            torch.save(val_sub_G, f"./dataset/{name}/val_sub_G.pt")
-            torch.save(val_sub_G_label, f"./dataset/{name}/val_sub_G_label.pt")
-            torch.save(test_sub_G, f"./dataset/{name}/test_sub_G.pt")
+                       f"./progetto/dataset/{name}/train_sub_G_label.pt")
+            torch.save(val_sub_G, f"./progetto/dataset/{name}/val_sub_G.pt")
+            torch.save(val_sub_G_label, f"./progetto/dataset/{name}/val_sub_G_label.pt")
+            torch.save(test_sub_G, f"./progetto/dataset/{name}/test_sub_G.pt")
             torch.save(test_sub_G_label,
-                       f"./dataset/{name}/test_sub_G_label.pt")
+                       f"./progetto/dataset/{name}/test_sub_G_label.pt")
         mask = torch.cat(
             (torch.zeros(len(train_sub_G_label), dtype=torch.int64),
              torch.ones(len(val_sub_G_label), dtype=torch.int64),
@@ -217,7 +217,7 @@ def load_dataset(name: str):
             [torch.tensor(i) for i in train_sub_G + val_sub_G + test_sub_G],
             batch_first=True,
             padding_value=-1)
-        rawedge = nx.read_edgelist(f"./dataset/{name}/edge_list.txt").edges
+        rawedge = nx.read_edgelist(f"./progetto/dataset/{name}/edge_list.txt").edges
         edge_index = torch.tensor([[int(i[0]), int(i[1])]
                                    for i in rawedge]).t()
         num_node = max([torch.max(pos), torch.max(edge_index)]) + 1
