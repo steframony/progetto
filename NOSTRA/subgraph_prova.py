@@ -1,189 +1,138 @@
-import os
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torch import nn
-import numpy as np
+from torch_geometric.nn import GCNConv, global_mean_pool
 import matplotlib.pyplot as plt
 import networkx as nx
-
-from torch.nn.utils.rnn import pad_sequence
-from torch.nn.functional import one_hot
-from torch_geometric.utils import is_undirected, to_undirected, negative_sampling, to_networkx
-from torch_geometric.nn import GCNConv
-from torch_geometric.data import Data
+from dataset import load_dataset
 
 
-# =========================
-# BaseGraph Definition
-# =========================
-class BaseGraph(Data):
-    def __init__(self, x, edge_index, edge_weight, subG_node, subG_label, mask):
-        super(BaseGraph, self).__init__(x=x,
-                                        edge_index=edge_index,
-                                        edge_attr=edge_weight,
-                                        pos=subG_node,
-                                        y=subG_label)
-        self.mask = mask
-        self.to_undirected()
+# ======== MODEL ==========
+class SubgraphGNN(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(SubgraphGNN, self).__init__()
+        self.conv1 = GCNConv(input_dim, hidden_dim)
+        self.conv2 = GCNConv(hidden_dim, hidden_dim)
+        self.classifier = nn.Linear(hidden_dim, output_dim)
 
-    def addOneFeature(self):
-        self.x = torch.cat(
-            (self.x, torch.ones(self.x.shape[0], self.x.shape[1], 1)),
-            dim=-1)
-
-    def setOneFeature(self):
-        self.x = torch.ones((self.x.shape[0], 1, 1), dtype=torch.int64)
-
-    def get_split(self, split: str):
-        tar_mask = {"train": 0, "valid": 1, "test": 2}[split]
-        return self.x, self.edge_index, self.edge_attr, self.pos[self.mask == tar_mask], self.y[self.mask == tar_mask]
-
-    def to_undirected(self):
-        if not is_undirected(self.edge_index):
-            self.edge_index, self.edge_attr = to_undirected(self.edge_index, self.edge_attr)
-
-    def to(self, device):
-        self.x = self.x.to(device)
-        self.edge_index = self.edge_index.to(device)
-        self.edge_attr = self.edge_attr.to(device)
-        self.pos = self.pos.to(device)
-        self.y = self.y.to(device)
-        self.mask = self.mask.to(device)
-        return self
-
-
-# =========================
-# Dataset Loader
-# =========================
-def load_dataset(name: str):
-    if name in ["coreness", "cut_ratio", "density", "component"]:
-        obj = np.load(f"./progetto/dataset_/{name}/tmp.npy", allow_pickle=True).item()
-        edge = np.array([[i[0] for i in obj['G'].edges],
-                         [i[1] for i in obj['G'].edges]])
-        node = [n for n in obj['G'].nodes]
-        subG = obj["subG"]
-        subG_pad = pad_sequence([torch.tensor(i) for i in subG],
-                                batch_first=True,
-                                padding_value=-1)
-        subGLabel = torch.tensor([ord(i) - ord('A') for i in obj["subGLabel"]])
-        cnt = subG_pad.shape[0]
-        mask = torch.cat(
-            (torch.zeros(cnt - cnt // 2, dtype=torch.int64),
-             torch.ones(cnt // 4, dtype=torch.int64),
-             2 * torch.ones(cnt // 2 - cnt // 4, dtype=torch.int64)))
-        mask = mask[torch.randperm(mask.shape[0])]
-        return BaseGraph(torch.empty((len(node), 1, 0)),
-                         torch.from_numpy(edge),
-                         torch.ones(edge.shape[1]),
-                         subG_pad,
-                         subGLabel,
-                         mask)
-    else:
-        raise NotImplementedError()
-
-
-# =========================
-# GNN Model
-# =========================
-class GNNSubgraphClassifier(nn.Module):
-    def __init__(self, in_channels, hidden_channels, num_classes):
-        super().__init__()
-        self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        self.dropout = nn.Dropout(0.3)
-        self.classifier = nn.Linear(hidden_channels, num_classes)
-
-    def forward(self, x, edge_index, subgraphs):
-        x = self.conv1(x.squeeze(1), edge_index)
+    def forward(self, x, edge_index, batch):
+        x = self.conv1(x, edge_index)
         x = F.relu(x)
-        x = self.dropout(x)
         x = self.conv2(x, edge_index)
-
-        subgraph_embeddings = []
-        for subgraph in subgraphs:
-            valid_nodes = subgraph[subgraph >= 0]
-            sg_emb = x[valid_nodes].mean(dim=0)
-            subgraph_embeddings.append(sg_emb)
-
-        subgraph_embeddings = torch.stack(subgraph_embeddings)
-        out = self.classifier(subgraph_embeddings)
+        x = F.relu(x)
+        x = global_mean_pool(x, batch)
+        out = self.classifier(x)
         return out
 
 
-# =========================
-# Training Function
-# =========================
-def train(model, data, optimizer, criterion, device):
-    model.train()
-    x, edge_index, edge_attr, pos, y = data.get_split("train")
-    x, edge_index, pos, y = x.to(device), edge_index.to(device), pos.to(device), y.to(device)
+# ======== UTILS ==========
+def get_subgraph_node_features(graph, subgraphs):
+    all_nodes = []
+    batch = []
+    for i, nodes in enumerate(subgraphs):
+        nodes = nodes[nodes != -1]
+        all_nodes.extend(nodes.tolist())
+        batch.extend([i] * len(nodes))
+    x = graph.x.squeeze(1)
+    node_features = x[all_nodes]
+    batch = torch.tensor(batch, dtype=torch.long)
+    return node_features, batch, all_nodes
 
+
+def train(model, graph, optimizer, split='train'):
+    model.train()
     optimizer.zero_grad()
-    out = model(x, edge_index, pos)
-    loss = criterion(out, y)
+    x, edge_index, edge_attr, subgraphs, labels = graph.get_split(split)
+
+    node_features, batch, all_nodes = get_subgraph_node_features(graph, subgraphs)
+    all_nodes_tensor = torch.tensor(all_nodes, dtype=torch.long)
+    edge_mask = torch.isin(graph.edge_index[0], all_nodes_tensor) & torch.isin(graph.edge_index[1], all_nodes_tensor)
+    edge_index = graph.edge_index[:, edge_mask]
+
+    out = model(node_features.float(), edge_index, batch)
+    loss = F.cross_entropy(out, labels)
     loss.backward()
     optimizer.step()
     return loss.item()
 
 
-# =========================
-# Test Function
-# =========================
-def test(model, data, device, split="test"):
+def test(model, graph, split='test'):
     model.eval()
-    x, edge_index, edge_attr, pos, y = data.get_split(split)
-    x, edge_index, pos, y = x.to(device), edge_index.to(device), pos.to(device), y.to(device)
+    x, edge_index, edge_attr, subgraphs, labels = graph.get_split(split)
+
+    node_features, batch, all_nodes = get_subgraph_node_features(graph, subgraphs)
+    all_nodes_tensor = torch.tensor(all_nodes, dtype=torch.long)
+    edge_mask = torch.isin(graph.edge_index[0], all_nodes_tensor) & torch.isin(graph.edge_index[1], all_nodes_tensor)
+    edge_index = graph.edge_index[:, edge_mask]
 
     with torch.no_grad():
-        out = model(x, edge_index, pos)
+        out = model(node_features.float(), edge_index, batch)
         pred = out.argmax(dim=1)
-        acc = (pred == y).float().mean().item()
+        acc = (pred == labels).float().mean().item()
     return acc
 
 
-# =========================
-# Visualization
-# =========================
-def visualize_subgraph(data, subgraph_id):
-    sub_nodes = data.pos[subgraph_id]
-    valid_nodes = sub_nodes[sub_nodes >= 0].tolist()
+# ======== VISUALIZATION ==========
+def plot_subgraph(graph, subgraph_nodes, labels=None, pred_labels=None):
+    sub_nodes = subgraph_nodes[subgraph_nodes != -1].tolist()
+    G = nx.Graph()
+    edge_index = graph.edge_index.numpy()
+    for i in range(edge_index.shape[1]):
+        u, v = edge_index[:, i]
+        if u in sub_nodes and v in sub_nodes:
+            G.add_edge(u, v)
 
-    G = to_networkx(data, to_undirected=True)
-    sg = G.subgraph(valid_nodes)
-
+    pos = nx.spring_layout(G, seed=42)
     plt.figure(figsize=(6, 6))
-    nx.draw(sg, with_labels=True, node_color='skyblue', edge_color='gray', node_size=500)
-    plt.title(f"Subgraph ID: {subgraph_id}")
+    nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=800, font_size=10, edge_color='gray')
+    title = "Subgraph"
+    if labels is not None:
+        title += f" | Label: {labels}"
+    if pred_labels is not None:
+        title += f" | Pred: {pred_labels}"
+    plt.title(title)
     plt.show()
 
 
-# =========================
-# Main Function
-# =========================
+def visualize_example(graph, model):
+    model.eval()
+    x, edge_index, edge_attr, subgraphs, labels = graph.get_split("test")
+    node_features, batch, all_nodes = get_subgraph_node_features(graph, subgraphs)
+    all_nodes_tensor = torch.tensor(all_nodes, dtype=torch.long)
+    edge_mask = torch.isin(graph.edge_index[0], all_nodes_tensor) & torch.isin(graph.edge_index[1], all_nodes_tensor)
+    edge_index = graph.edge_index[:, edge_mask]
+
+    with torch.no_grad():
+        out = model(node_features.float(), edge_index, batch)
+        pred = out.argmax(dim=1)
+
+    idx = torch.randint(0, subgraphs.shape[0], (1,)).item()
+    subgraph_nodes = subgraphs[idx]
+    label = labels[idx].item()
+    pred_label = pred[idx].item()
+    plot_subgraph(graph, subgraph_nodes, label, pred_label)
+
+
+# ======== MAIN ==========
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dataset_name = "ppi_bp"  # Cambia con "density", "ppi_bp", ecc.
+    graph = load_dataset(dataset_name)
+    graph.setOneFeature()  # Scegli una: setOneFeature(), setDegreeFeature(), ecc.
 
-    # Carica dataset
-    dataset_name = "ppi_bp" 
-    data = load_dataset(dataset_name).to(device)
-    data.setOneFeature()  # imposta feature costanti per i nodi
+    input_dim = graph.x.shape[-1]
+    hidden_dim = 64
+    output_dim = int(graph.y.max().item()) + 1
 
-    in_channels = data.x.shape[-1]
-    hidden_channels = 64
-    num_classes = len(data.y.unique())
-
-    model = GNNSubgraphClassifier(in_channels, hidden_channels, num_classes).to(device)
+    model = SubgraphGNN(input_dim, hidden_dim, output_dim)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    criterion = torch.nn.CrossEntropyLoss()
 
-    # Addestramento
-    for epoch in range(1, 51):
-        loss = train(model, data, optimizer, criterion, device)
-        acc = test(model, data, device, split="test")
-        print(f"[Epoch {epoch:02d}] Loss: {loss:.4f} | Test Acc: {acc:.4f}")
+    for epoch in range(1, 101):
+        loss = train(model, graph, optimizer)
+        acc = test(model, graph)
+        print(f"Epoch {epoch:03d} | Loss: {loss:.4f} | Test Acc: {acc:.4f}")
 
-    # Visualizzazione sottografo
-    visualize_subgraph(data, subgraph_id=0)
+    # Visualizza un sottografo del test set
+    visualize_example(graph, model)
 
 
 if __name__ == "__main__":
