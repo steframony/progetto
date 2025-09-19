@@ -39,6 +39,16 @@ def get_subgraph_node_features(graph, subgraphs):
     return node_features, batch, all_nodes
 
 
+def remap_edge_index(edge_index, all_nodes):
+    """
+    Rimappa edge_index perché punti agli indici relativi a node_features
+    """
+    node_id_map = {old_id: new_id for new_id, old_id in enumerate(all_nodes)}
+    src = [node_id_map[int(i)] for i in edge_index[0]]
+    dst = [node_id_map[int(i)] for i in edge_index[1]]
+    return torch.tensor([src, dst], dtype=torch.long)
+
+
 def train(model, graph, optimizer, split='train'):
     model.train()
     optimizer.zero_grad()
@@ -46,11 +56,13 @@ def train(model, graph, optimizer, split='train'):
 
     node_features, batch, all_nodes = get_subgraph_node_features(graph, subgraphs)
     all_nodes_tensor = torch.tensor(all_nodes, dtype=torch.long)
+
     edge_mask = torch.isin(graph.edge_index[0], all_nodes_tensor) & torch.isin(graph.edge_index[1], all_nodes_tensor)
     edge_index = graph.edge_index[:, edge_mask]
+    edge_index = remap_edge_index(edge_index, all_nodes)
 
     out = model(node_features.float(), edge_index, batch)
-    loss = F.cross_entropy(out, labels)
+    loss = F.cross_entropy(out, labels.long())  # ✅ fix tipo etichetta
     loss.backward()
     optimizer.step()
     return loss.item()
@@ -64,11 +76,12 @@ def test(model, graph, split='test'):
     all_nodes_tensor = torch.tensor(all_nodes, dtype=torch.long)
     edge_mask = torch.isin(graph.edge_index[0], all_nodes_tensor) & torch.isin(graph.edge_index[1], all_nodes_tensor)
     edge_index = graph.edge_index[:, edge_mask]
+    edge_index = remap_edge_index(edge_index, all_nodes)
 
     with torch.no_grad():
         out = model(node_features.float(), edge_index, batch)
         pred = out.argmax(dim=1)
-        acc = (pred == labels).float().mean().item()
+        acc = (pred == labels.long()).float().mean().item()  # ✅ fix tipo etichetta
     return acc
 
 
@@ -101,6 +114,7 @@ def visualize_example(graph, model):
     all_nodes_tensor = torch.tensor(all_nodes, dtype=torch.long)
     edge_mask = torch.isin(graph.edge_index[0], all_nodes_tensor) & torch.isin(graph.edge_index[1], all_nodes_tensor)
     edge_index = graph.edge_index[:, edge_mask]
+    edge_index = remap_edge_index(edge_index, all_nodes)
 
     with torch.no_grad():
         out = model(node_features.float(), edge_index, batch)
@@ -117,7 +131,7 @@ def visualize_example(graph, model):
 def main():
     dataset_name = "ppi_bp"  # Cambia con "density", "ppi_bp", ecc.
     graph = load_dataset(dataset_name)
-    graph.setOneFeature()  # Scegli una: setOneFeature(), setDegreeFeature(), ecc.
+    #graph.setOneFeature()  # setOneFeature(), setDegreeFeature(), ecc.
 
     input_dim = graph.x.shape[-1]
     hidden_dim = 64
@@ -131,7 +145,6 @@ def main():
         acc = test(model, graph)
         print(f"Epoch {epoch:03d} | Loss: {loss:.4f} | Test Acc: {acc:.4f}")
 
-    # Visualizza un sottografo del test set
     visualize_example(graph, model)
 
 
