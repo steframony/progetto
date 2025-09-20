@@ -1,6 +1,5 @@
 import torch
 
-
 def train(optimizer, model, dataloader, loss_fn):
     '''
     Train models in an epoch.

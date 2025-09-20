@@ -11,7 +11,7 @@ import random
 import train
 import metrics
 
-# --- Argomenti da riga di comando ---
+# === Argomenti da riga di comando ===
 parser = argparse.ArgumentParser(description='Test SimpleGNN for Subgraph Classification')
 parser.add_argument('--dataset', type=str, default='ppi_bp')
 parser.add_argument('--use_deg', action='store_true', default=True)
@@ -23,9 +23,9 @@ parser.add_argument('--device', type=int, default=0)
 parser.add_argument('--use_seed', action='store_true')
 args = parser.parse_args()
 
-# --- Setup del dispositivo ---
 device = f'cuda:{args.device}' if torch.cuda.is_available() and args.device >= 0 else 'cpu'
 
+# === Setting del seed per la riproducibilità ===
 def set_seed(seed: int):
     print(f"Impostazione seed: {seed}")
     random.seed(seed)
@@ -40,14 +40,13 @@ if args.use_seed:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# --- Variabili globali ---
 trn_dataset, val_dataset, tst_dataset = None, None, None
 max_deg, output_channels = 0, 1
 score_fn, loss_fn = None, None
 loader_fn = GDataloader
 tloader_fn = GDataloader
 
-# --- Caricamento e divisione dei dati ---
+# === Caricamento e suddivsione del dataset === 
 def split():
     global trn_dataset, val_dataset, tst_dataset, baseG, max_deg, output_channels, loader_fn, tloader_fn, loss_fn, score_fn
     
@@ -82,15 +81,16 @@ def split():
     tst_dataset = GDataset(*baseG.get_split("test"))
     
     global loader_fn, tloader_fn
+    ##### never mind queste 3 righe non verranno utilizzate 
     if args.use_maxzeroone:
-        z_fn = lambda x, y: torch.zeros((x.shape[0], x.shape[1]), dtype=torch.int64) # Placeholder
+        z_fn = lambda x, y: torch.zeros((x.shape[0], x.shape[1]), dtype=torch.int64)
         loader_fn = lambda ds, bs: ZGDataloader(ds, bs, z_fn=z_fn)
         tloader_fn = lambda ds, bs: ZGDataloader(ds, bs, z_fn=z_fn, shuffle=True, drop_last=False)
     else:
         loader_fn = lambda ds, bs: GDataloader(ds, bs)
         tloader_fn = lambda ds, bs: GDataloader(ds, bs, shuffle=True)
 
-# --- Costruzione del modello ---
+# === Costruzione del modello ===
 def build_simple_model(hidden_dim, conv_layer, dropout):
     model = SimpleGNN(
         input_dim=max_deg,
@@ -101,7 +101,7 @@ def build_simple_model(hidden_dim, conv_layer, dropout):
     ).to(device)
     return model
 
-# --- Funzione di Test Principale ---
+# === Funzione per effettuare u test con vari iperparametri ===
 def test(hidden_dim=64, conv_layer=3, dropout=0.5, lr=1e-3, batch_size=128, resi=0.5):
     num_div = tst_dataset.y.shape[0] / batch_size
     if args.dataset in ["density", "component", "cut_ratio", "coreness"]:
@@ -141,7 +141,8 @@ def test(hidden_dim=64, conv_layer=3, dropout=0.5, lr=1e-3, batch_size=128, resi
                 else:
                     early_stop_counter += 1
             
-            if early_stop_counter > 25: # Pazienza di 25 epoche
+            ### EARLY STOPPING!!!
+            if early_stop_counter > 25:
                 print("Early stopping.")
                 break
         
@@ -154,11 +155,10 @@ def test(hidden_dim=64, conv_layer=3, dropout=0.5, lr=1e-3, batch_size=128, resi
     else:
         print(f"Score Finale su Test: {outs[0]:.3f}")
 
-# --- Esecuzione ---
 if __name__ == '__main__':
+    
     print("Argomenti:", args)
 
-    # Definisci qui gli iperparametri per il modello SimpleGNN
     params = {
         'hidden_dim': 64,
         'conv_layer': 3,
@@ -169,5 +169,5 @@ if __name__ == '__main__':
     }
 
     print("Parametri utilizzati:", params)
-    split() # Chiamata iniziale per inizializzare i dataset
+    split()
     test(**params)
