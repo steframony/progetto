@@ -1,4 +1,4 @@
-from models import SimpleGNN
+from models import SimpleGNN, GNNAttentionPool
 from SubGDataset import GDataset, GDataloader, ZGDataloader
 import datasets
 import torch
@@ -21,6 +21,8 @@ parser.add_argument('--use_maxzeroone', action='store_true')
 parser.add_argument('--repeat', type=int, default=1)
 parser.add_argument('--device', type=int, default=0)
 parser.add_argument('--use_seed', action='store_true')
+parser.add_argument('--model', type=str, default='innovative', help='Scegli il modello: simple, innovative')
+
 args = parser.parse_args()
 
 device = f'cuda:{args.device}' if torch.cuda.is_available() and args.device >= 0 else 'cpu'
@@ -101,6 +103,28 @@ def build_simple_model(hidden_dim, conv_layer, dropout):
     ).to(device)
     return model
 
+# === Costruzione del modello ===
+def build_model(model_name, hidden_dim, conv_layer, dropout):
+    if model_name == 'simple':
+        model = SimpleGNN(
+            input_dim=max_deg,
+            hidden_dim=hidden_dim,
+            output_dim=output_channels,
+            num_layers=conv_layer,
+            dropout=dropout
+        ).to(device)
+    elif model_name == 'innovative':
+        model = GNNAttentionPool(
+            input_dim=max_deg,
+            hidden_dim=hidden_dim,
+            output_dim=output_channels,
+            num_layers=conv_layer,
+            dropout=dropout
+        ).to(device)
+    else:
+        raise ValueError(f"Modello '{model_name}' non riconosciuto.")
+    return model
+
 # === Funzione per effettuare u test con vari iperparametri ===
 def test(hidden_dim=64, conv_layer=3, dropout=0.5, lr=1e-3, batch_size=128, resi=0.5):
     num_div = tst_dataset.y.shape[0] / batch_size
@@ -113,20 +137,24 @@ def test(hidden_dim=64, conv_layer=3, dropout=0.5, lr=1e-3, batch_size=128, resi
         print(f"--- Ripetizione {repeat} ---")
         split()
         
-        gnn = build_simple_model(hidden_dim, conv_layer, dropout)
+        gnn = build_model(args.model, hidden_dim, conv_layer, dropout)
         
+        print("Modello costruito!")
         trn_loader = loader_fn(trn_dataset, batch_size)
         val_loader = tloader_fn(val_dataset, batch_size)
         tst_loader = tloader_fn(tst_dataset, batch_size)
         
+        print("Dataset caricato!")
         optimizer = Adam(gnn.parameters(), lr=lr)
         scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, factor=resi, min_lr=1e-5, patience=10)
 
         best_val_score = 0
         final_tst_score = 0
         early_stop_counter = 0
-        
+
+        print("Inizio training...")
         for epoch in range(1, 301):
+
             loss = train.train(optimizer, gnn, trn_loader, loss_fn)
             
             if epoch > 10:
@@ -143,7 +171,7 @@ def test(hidden_dim=64, conv_layer=3, dropout=0.5, lr=1e-3, batch_size=128, resi
             
             ### EARLY STOPPING!!!
             if early_stop_counter > 25:
-                print("Early stopping.")
+                print(f"Early stopping per epoca {epoch}!")
                 break
         
         print(f"Fine Ripetizione {repeat}: Miglior Val {best_val_score:.3f}, Test Finale {final_tst_score:.3f}")
@@ -156,7 +184,7 @@ def test(hidden_dim=64, conv_layer=3, dropout=0.5, lr=1e-3, batch_size=128, resi
         print(f"Score Finale su Test: {outs[0]:.3f}")
 
 if __name__ == '__main__':
-    
+
     print("Argomenti:", args)
 
     params = {
