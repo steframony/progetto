@@ -7,6 +7,12 @@ from torch_geometric.data import Data
 import networkx as nx
 import os
 
+PATH  = ""
+KAGGLE = True
+if KAGGLE:
+    PATH = "./kaggle/working/progetto/NOSTRA"
+else:
+    PATH = "./dataset"
 
 class BaseGraph(Data):
     def __init__(self, x, edge_index, edge_weight, subG_node, subG_label,
@@ -178,27 +184,27 @@ def load_dataset(name: str):
             return train_sub_G, train_sub_G_label, val_sub_G, val_sub_G_label, test_sub_G, test_sub_G_label
 
         if os.path.exists(
-                f"./dataset/{name}/train_sub_G.pt") and name != "hpo_neuro":
-            train_sub_G = torch.load(f"./dataset/{name}/train_sub_G.pt")
+                f"{PATH}/{name}/train_sub_G.pt") and name != "hpo_neuro":
+            train_sub_G = torch.load(f"{PATH}/{name}/train_sub_G.pt")
             train_sub_G_label = torch.load(
-                f"./dataset/{name}/train_sub_G_label.pt")
-            val_sub_G = torch.load(f"./dataset/{name}/val_sub_G.pt")
+                f"{PATH}/{name}/train_sub_G_label.pt")
+            val_sub_G = torch.load(f"{PATH}/{name}/val_sub_G.pt")
             val_sub_G_label = torch.load(
-                f"./dataset/{name}/val_sub_G_label.pt")
-            test_sub_G = torch.load(f"./dataset/{name}/test_sub_G.pt")
+                f"{PATH}/{name}/val_sub_G_label.pt")
+            test_sub_G = torch.load(f"{PATH}/{name}/test_sub_G.pt")
             test_sub_G_label = torch.load(
-                f"./dataset/{name}/test_sub_G_label.pt")
+                f"{PATH}/{name}/test_sub_G_label.pt")
         else:
             train_sub_G, train_sub_G_label, val_sub_G, val_sub_G_label, test_sub_G, test_sub_G_label = read_subgraphs(
-                f"./dataset/{name}/subgraphs.pth")
-            torch.save(train_sub_G, f"./dataset/{name}/train_sub_G.pt")
+                f"{PATH}/{name}/subgraphs.pth")
+            torch.save(train_sub_G, f"{PATH}/{name}/train_sub_G.pt")
             torch.save(train_sub_G_label,
-                       f"./dataset/{name}/train_sub_G_label.pt")
-            torch.save(val_sub_G, f"./dataset/{name}/val_sub_G.pt")
-            torch.save(val_sub_G_label, f"./dataset/{name}/val_sub_G_label.pt")
-            torch.save(test_sub_G, f"./dataset/{name}/test_sub_G.pt")
+                       f"{PATH}/{name}/train_sub_G_label.pt")
+            torch.save(val_sub_G, f"{PATH}/{name}/val_sub_G.pt")
+            torch.save(val_sub_G_label, f"{PATH}/{name}/val_sub_G_label.pt")
+            torch.save(test_sub_G, f"{PATH}/{name}/test_sub_G.pt")
             torch.save(test_sub_G_label,
-                       f"./dataset/{name}/test_sub_G_label.pt")
+                       f"{PATH}/{name}/test_sub_G_label.pt")
         mask = torch.cat(
             (torch.zeros(len(train_sub_G_label), dtype=torch.int64),
              torch.ones(len(val_sub_G_label), dtype=torch.int64),
@@ -217,7 +223,7 @@ def load_dataset(name: str):
             [torch.tensor(i) for i in train_sub_G + val_sub_G + test_sub_G],
             batch_first=True,
             padding_value=-1)
-        rawedge = nx.read_edgelist(f"./dataset/{name}/edge_list.txt").edges
+        rawedge = nx.read_edgelist(f"{PATH}/{name}/edge_list.txt").edges
         edge_index = torch.tensor([[int(i[0]), int(i[1])]
                                    for i in rawedge]).t()
         num_node = max([torch.max(pos), torch.max(edge_index)]) + 1
